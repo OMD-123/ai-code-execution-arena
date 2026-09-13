@@ -27,32 +27,49 @@ const submissions: Submission[] = [];
 
 function runInSandbox(code: string): { output: string | null; error: string | null; runtimeMs: number } {
   const start = Date.now();
+  const captured: string[] = [];
+  const formatValue = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'undefined') return '';
+    if (typeof value === 'function') return value.toString();
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
   const vm = new VM({
-    timeout: 1000, // 1 second
+    timeout: 1000,
     sandbox: {
       console: {
         log: (...args: any[]) => {
-          // We'll capture logs via overriding console.log
-          // For simplicity, we'll rely on vm's built-in output? Actually vm2 doesn't capture console.log by default.
-          // We'll need to wrap console.log.
+          captured.push(args.map(formatValue).join(' '));
+        },
+        error: (...args: any[]) => {
+          captured.push(args.map(formatValue).join(' '));
+        },
+        warn: (...args: any[]) => {
+          captured.push(args.map(formatValue).join(' '));
+        },
+        info: (...args: any[]) => {
+          captured.push(args.map(formatValue).join(' '));
         }
       }
     }
   });
-  // Actually vm2 allows to get stdout/stderr via options? Let's use a simpler approach: we'll evaluate and capture result.
-  // We'll wrap user code in a function that returns something, and we'll also capture console.log via overriding.
-  // For simplicity, we'll just evaluate and return the result as string, and catch errors.
-  // We'll not support console.log for now to keep it simple.
-  // In a real arena, you'd want to capture stdout/stderr.
-  // Let's use vm2's ability to evaluate and get result.
+
   let output: string | null = null;
   let error: string | null = null;
   try {
-    const result = vm.run(code);
-    output = result !== undefined && result !== null ? String(result) : '';
+    const result = vm.run(`(function () { ${code} })()`);
+    output = captured.length > 0
+      ? captured.join('\n')
+      : result !== undefined && result !== null ? String(result) : '';
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
+
   const runtimeMs = Date.now() - start;
   return { output, error, runtimeMs };
 }
