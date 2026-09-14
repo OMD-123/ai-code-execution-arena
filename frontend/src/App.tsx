@@ -1,259 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import './App.css';
 
-const API_URL = 'http://localhost:5000/api';
+const API = 'http://localhost:5000/api';
+type View = 'dashboard' | 'problems' | 'workspace' | 'submissions' | 'profile';
+type Language = 'javascript' | 'typescript';
+type Difficulty = 'Easy' | 'Medium' | 'Hard';
+type Status = 'Accepted' | 'Wrong Answer' | 'Runtime Error' | 'Time Limit Exceeded';
+type Problem = { id: string; title: string; description: string; kind?: 'algorithm' | 'system-design'; difficulty: Difficulty; category: string; tags: string[]; acceptanceRate: number; constraints: string[]; examples: Array<{ input: string; output: string; explanation?: string }>; architecture?: string[]; apiContract?: string[]; starterCode: Record<Language, string> };
+type Submission = { id: string; problemId: string; language: string; status: Status; passedTestCases: number; totalTestCases: number; runtimeMs: number | null; timestamp: number; output?: string | null; error?: string | null };
 
-function App() {
-  const [problems, setProblems] = useState([]);
-  const [selectedProblemId, setSelectedProblemId] = useState(null);
-  const [problem, setProblem] = useState(null);
+const nav = [{ id: 'dashboard', label: 'Overview', icon: '▦' }, { id: 'problems', label: 'Problem set', icon: '◫' }, { id: 'submissions', label: 'Submissions', icon: '↗' }, { id: 'profile', label: 'Profile', icon: '○' }] as const;
+
+export default function App() {
+  const [view, setView] = useState<View>('dashboard');
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [problemId, setProblemId] = useState('');
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('javascript');
-  const [output, setOutput] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [runtime, setRuntime] = useState<number | null>(null);
-  const [status, setStatus] = useState<'Accepted' | 'Wrong Answer' | 'Runtime Error' | 'Time Limit Exceeded' | null>(null);
-  const [passedTestCases, setPassedTestCases] = useState(0);
-  const [totalTestCases, setTotalTestCases] = useState(0);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [language, setLanguage] = useState<Language>('javascript');
+  const [result, setResult] = useState<{ output: string; error: string | null; runtimeMs: number | null; status: Status | null; passed: number; total: number }>({ output: '', error: null, runtimeMs: null, status: null, passed: 0, total: 0 });
+  const [busy, setBusy] = useState(false);
+  const [sandboxInput, setSandboxInput] = useState('{}');
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'All' | Difficulty>('All');
 
-  useEffect(() => {
-    fetchProblems();
-    // If there's a problem selected, fetch its leaderboard
-    if (selectedProblemId) {
-      fetchLeaderboard(selectedProblemId);
-    }
-  }, [selectedProblemId]);
+  useEffect(() => { void loadProblems(); void loadSubmissions(); }, []);
+  useEffect(() => { if (problemId) void loadProblem(problemId); }, [problemId]);
+  useEffect(() => { if (!problem) return; setCode(problem.starterCode[language]); setSandboxInput(problem.kind === 'system-design' ? JSON.stringify({ limit: 2, windowMs: 1000, requests: [{ userId: 'ada', timestamp: 0 }, { userId: 'ada', timestamp: 100 }, { userId: 'ada', timestamp: 200 }] }, null, 2) : '{}'); }, [problem, language]);
 
-  const fetchProblems = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/problems`);
-      setProblems(res.data.problems);
-      // Select the first problem by default if none selected
-      if (!selectedProblemId && problems.length === 0 && res.data.problems.length > 0) {
-        setSelectedProblemId(res.data.problems[0].id);
-      }
-    } catch (err) {
-      console.error('Failed to fetch problems', err);
-    }
-  };
-
-  const handleProblemChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const problemId = e.target.value;
-    setSelectedProblemId(problemId);
-    setProblem(null); // reset problem details
-    setCode('');
-    setOutput(null);
-    setError(null);
-    setRuntime(null);
-    setStatus(null);
-    setPassedTestCases(0);
-    setTotalTestCases(0);
-    setLeaderboard([]);
-    fetchProblemDetails(problemId);
-    fetchLeaderboard(problemId);
-  };
-
-  const fetchProblemDetails = (problemId: string) => {
-    axios.get(`${API_URL}/problems/${problemId}`)
-      .then(res => {
-        setProblem(res.data.problem);
-      })
-      .catch(err => console.error('Failed to fetch problem details', err));
-  };
-
-  const fetchLeaderboard = (problemId: string) => {
-    axios.get(`${API_URL}/leaderboard/${problemId}`)
-      .then(res => {
-        setLeaderboard(res.data.leaderboard);
-      })
-      .catch(err => console.error('Failed to fetch leaderboard', err));
-  };
-
-  const submitCode = async () => {
-    if (!problem || !selectedProblemId) return;
-    setSubmitting(true);
-    setLoading(true);
-    setOutput(null);
-    setError(null);
-    setRuntime(null);
-    setStatus(null);
-    setPassedTestCases(0);
-    setTotalTestCases(0);
-    try {
-      const res = await axios.post(`${API_URL}/submit/${selectedProblemId}`, {
-        code,
-        language
-      });
-      const sub = res.data.submission;
-      setOutput(sub.output ?? '');
-      setError(sub.error);
-      setRuntime(sub.runtimeMs);
-      setStatus(sub.status);
-      setPassedTestCases(sub.passedTestCases);
-      setTotalTestCases(sub.totalTestCases);
-      // refresh leaderboard for this problem
-      fetchLeaderboard(selectedProblemId);
-    } catch (err) {
-      setError('Submission failed');
-    } finally {
-      setLoading(false);
-      setSubmitting(false);
-    }
-  };
-
-  if (!problems.length) {
-    return (
-      <div className="App">
-        <p>Loading problems...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="App">
-      <header className="App-header">
-        <h1>🤖 AI Code Execution Arena</h1>
-        <p>LeetCode-style coding challenge platform</p>
-      </header>
-      <main className="App-main">
-        <section className="problem-selector">
-          <h2>Select a Problem</h2>
-          <select
-            value={selectedProblemId || ''}
-            onChange={handleProblemChange}
-            className="problem-select"
-            disabled={loading}
-          >
-            <option value="">-- Select a Problem --</option>
-            {problems.map(p => (
-              <option key={p.id} value={p.id}>
-                [{p.difficulty}] {p.title}
-              </option>
-            ))}
-          </select>
-        </section>
-
-        {problem && (
-          <section className="problem-detail">
-            <h2>{problem.title}</h2>
-            <div className="difficulty-badge">{problem.difficulty}</div>
-            <p>{problem.description}</p>
-          </section>
-        )}
-
-        {selectedProblemId && !problem ? (
-          <p className="loading">Loading problem details...</p>
-        ) : null}
-
-        {problem && (
-          <section className="code-section">
-            <h2>Write Your Solution</h2>
-            <div className="controls">
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="language-select"
-                disabled={submitting}
-              >
-                <option value="javascript">JavaScript</option>
-                <option value="typescript">TypeScript</option>
-              </select>
-              <button
-                onClick={submitCode}
-                disabled={submitting || !code.trim()}
-                className="submit-btn"
-              >
-                {submitting ? 'Submitting...' : 'Submit'}
-              </button>
-            </div>
-            <textarea
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="Write your solution here..."
-              className="code-input"
-            />
-          </section>
-        )}
-
-        {problem && (
-          <section className="result-section">
-            <h2>Result</h2>
-            {loading && <p className="loading">Running test cases...</p>}
-            {error && !status && (
-              <div className="result error">
-                <h3>Error:</h3>
-                <pre>{error}</pre>
-              </div>
-            )}
-            {status && (
-              <div className={`result ${status.toLowerCase()}`}>
-                <h3>Status: {status}</h3>
-                {error && (
-                  <div>
-                    <p>Error: {error}</p>
-                  </div>
-                )}
-                {output !== null && output !== '' && status !== 'Runtime Error' && (
-                  <div>
-                    <p>Output:</p>
-                    <pre>{output}</pre>
-                  </div>
-                )}
-                {runtime !== null && (
-                  <p>Average Runtime: {runtime.toFixed(2)} ms</p>
-                )}
-                <p>
-                  Test Cases: {passedTestCases} / {totalTestCases} passed
-                </p>
-              </div>
-            )}
-          </section>
-        )}
-
-        {selectedProblemId && (
-          <section className="leaderboard-section">
-            <h2>Leaderboard</h2>
-            {leaderboard.length === 0 ? (
-              <p className="empty">No submissions yet for this problem. Be the first!</p>
-            ) : (
-              <table className="leaderboard-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Language</th>
-                    <th>Status</th>
-                    <th>Passed</th>
-                    <th>Runtime (ms)</th>
-                    <th>Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaderboard.map((sub, idx) => (
-                    <tr key={sub.id}>
-                      <td>{idx + 1}</td>
-                      <td>{sub.language}</td>
-                      <td>
-                        <span className={`status-badge ${sub.status.toLowerCase()}`}>
-                          {sub.status}
-                        </span>
-                      </td>
-                      <td>{sub.passedTestCases}/{sub.totalTestCases}</td>
-                      <td>{sub.runtimeMs !== null ? sub.runtimeMs.toFixed(2) : 'N/A'}</td>
-                      <td>{new Date(sub.timestamp).toLocaleTimeString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
-        )}
-      </main>
-    </div>
-  );
+  async function loadProblems() { try { const data = (await axios.get(`${API}/problems`)).data.problems as Problem[]; setProblems(data); if (data[0]) setProblemId(data[0].id); } catch { /* Render remains useful while API starts. */ } }
+  async function loadProblem(id: string) { try { setProblem((await axios.get(`${API}/problems/${id}`)).data.problem); } catch { /* Keep the current workspace visible. */ } }
+  async function loadSubmissions() { try { setSubmissions((await axios.get(`${API}/submissions`)).data.submissions); } catch { setSubmissions([]); } }
+  function openProblem(id: string) { setProblemId(id); setView('workspace'); setResult({ output: '', error: null, runtimeMs: null, status: null, passed: 0, total: 0 }); }
+  function applyResult(data: { output?: string; error?: string | null; runtimeMs?: number | null; status?: Status; passedTestCases?: number; totalTestCases?: number }) { setResult({ output: data.output ?? '', error: data.error ?? null, runtimeMs: data.runtimeMs ?? null, status: data.status ?? (data.error ? 'Runtime Error' : 'Accepted'), passed: data.passedTestCases ?? 1, total: data.totalTestCases ?? 1 }); }
+  async function execute(endpoint: string, body: object) { setBusy(true); setResult({ output: '', error: null, runtimeMs: null, status: null, passed: 0, total: 0 }); try { const response = (await axios.post(`${API}${endpoint}`, body)).data; applyResult(response.result ?? response.submission); } catch { setResult(current => ({ ...current, error: 'Execution failed. Check the backend connection.' })); } finally { setBusy(false); } }
+  const solved = new Set(submissions.filter(item => item.status === 'Accepted').map(item => item.problemId));
+  const filtered = useMemo(() => problems.filter(item => (filter === 'All' || item.difficulty === filter) && `${item.title} ${item.category} ${item.tags.join(' ')}`.toLowerCase().includes(search.toLowerCase())), [problems, search, filter]);
+  if (!problem) return <div className="loading-screen"><div className="brand-mark">{'</>'}</div><h1>AI Code Execution Arena</h1><p>Preparing your workspace...</p></div>;
+  return <div className="product-shell"><aside className="app-sidebar"><div className="brand-lockup"><div className="brand-mark">{'</>'}</div><div><strong>arena</strong><span>code execution</span></div></div><div className="workspace-label">WORKSPACE</div><nav>{nav.map(item => <button key={item.id} className={view === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav><button className="nav-item" onClick={() => setView('workspace')}><span>⌘</span>Current challenge</button><div className="sidebar-footer"><div className="avatar">OM</div><div><strong>Omar Developer</strong><span>Free workspace</span></div></div></aside><div className="app-content"><header className="topbar"><div className="breadcrumbs"><span>Workspace</span><b>/</b><strong>{view === 'workspace' ? problem.title : nav.find(item => item.id === view)?.label}</strong></div><div className="topbar-actions"><button>?</button><button>⌘ K</button><button className="avatar">OM</button></div></header><main className="page-content">{view === 'dashboard' && <Dashboard problems={problems} submissions={submissions} solved={solved} open={openProblem} go={setView} />}{view === 'problems' && <Library problems={filtered} solved={solved} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} open={openProblem} />}{view === 'submissions' && <History submissions={submissions} problems={problems} />}{view === 'profile' && <Profile solved={solved} submissions={submissions} />}{view === 'workspace' && <Workspace problem={problem} problems={problems} id={problemId} code={code} setCode={setCode} language={language} setLanguage={setLanguage} result={result} busy={busy} sandboxInput={sandboxInput} setSandboxInput={setSandboxInput} open={openProblem} run={() => execute(`/run/${problemId}`, { code, language })} submit={async () => { await execute(`/submit/${problemId}`, { code, language }); void loadSubmissions(); }} sandbox={() => execute('/sandbox', { code, language, input: sandboxInput })} reset={() => setCode(problem.starterCode[language])} />}</main></div></div>;
 }
 
-export default App;
+function Heading({ eyebrow, title, text, action }: { eyebrow: string; title: string; text: string; action?: React.ReactNode }) { return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{text}</p></div>{action}</div>; }
+function Metric({ name, value, note, tone }: { name: string; value: string; note: string; tone: string }) { return <div className={`metric-card ${tone}`}><span>{name}</span><strong>{value}</strong><small>{note}</small></div>; }
+function Badge({ status }: { status: Status }) { return <span className={`status-badge ${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>; }
+function Dashboard({ problems, submissions, solved, open, go }: { problems: Problem[]; submissions: Submission[]; solved: Set<string>; open: (id: string) => void; go: (view: View) => void }) { const next = problems.find(item => !solved.has(item.id)) ?? problems[0]; const accepted = submissions.filter(item => item.status === 'Accepted').length; return <><Heading eyebrow="MONDAY, SEPTEMBER 14" title="Good morning, Omar" text="Pick up where you left off and keep your problem-solving streak alive." action={<button className="primary-action" onClick={() => open(next.id)}>Continue practicing →</button>} /><section className="metric-grid"><Metric name="Problems solved" value={String(solved.size).padStart(2, '0')} note={`of ${problems.length} available`} tone="green" /><Metric name="Current streak" value="04 days" note="Best: 12 days" tone="orange" /><Metric name="Acceptance rate" value={`${submissions.length ? Math.round(accepted / submissions.length * 100) : 0}%`} note={`${submissions.length} total attempts`} tone="blue" /><Metric name="Arena rank" value="#1,284" note="Top 18% this month" tone="purple" /></section><div className="dashboard-grid"><section className="surface-panel"><div className="panel-heading"><div><div className="eyebrow">UP NEXT</div><h2>{next.title}</h2></div><span className={`difficulty-badge ${next.difficulty}`}>{next.difficulty}</span></div><p>{next.description.split('\n')[0]}</p><button className="text-button" onClick={() => open(next.id)}>Open challenge →</button></section><section className="surface-panel"><div className="panel-heading"><div><div className="eyebrow">ACTIVITY</div><h2>Recent submissions</h2></div><button className="text-button" onClick={() => go('submissions')}>View all</button></div>{submissions.slice(0, 4).map(item => <div className="submission-row" key={item.id}><span className="submission-icon">{item.status === 'Accepted' ? '✓' : '!'}</span><div><strong>{problems.find(p => p.id === item.problemId)?.title ?? item.problemId}</strong><span>{item.language} · {new Date(item.timestamp).toLocaleTimeString()}</span></div><Badge status={item.status} /></div>)}{!submissions.length && <p className="empty">Your activity starts after your first submission.</p>}</section></div><section className="surface-panel roadmap-panel"><div className="panel-heading"><div><div className="eyebrow">LEARNING PATH</div><h2>Build interview confidence</h2></div><span>{solved.size} / {problems.length} complete</span></div><div className="progress-track"><span style={{ width: `${Math.max(6, solved.size / Math.max(problems.length, 1) * 100)}%` }} /></div><div className="roadmap-steps"><span className="done">01 · Arrays</span><span>02 · Strings</span><span>03 · System design</span><span>04 · Mock interview</span></div></section></>; }
+function Library({ problems, solved, search, setSearch, filter, setFilter, open }: { problems: Problem[]; solved: Set<string>; search: string; setSearch: (value: string) => void; filter: 'All' | Difficulty; setFilter: (value: 'All' | Difficulty) => void; open: (id: string) => void }) { return <><Heading eyebrow="CHALLENGE LIBRARY" title="Problem set" text="Sharpen algorithms and system design with executable challenges." action={<span className="library-count">{problems.length} challenges</span>} /><div className="library-toolbar"><div className="search-field">⌕ <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by title, topic, or category" /></div><div className="filter-group">{(['All', 'Easy', 'Medium', 'Hard'] as const).map(item => <button className={filter === item ? 'filter-button active' : 'filter-button'} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div></div><div className="problem-library-grid">{problems.map(item => <button className="library-card" key={item.id} onClick={() => open(item.id)}><div className="library-card-top"><span className={`difficulty-badge ${item.difficulty}`}>{item.difficulty}</span>{solved.has(item.id) && <span className="solved-label">✓ Solved</span>}</div><h2>{item.title}</h2><p>{item.description.split('\n')[0]}</p><div className="library-card-footer"><span>{item.category}</span><span>{item.acceptanceRate}% acceptance</span></div><div className="card-tags">{item.tags.map(tag => <span key={tag}>{tag}</span>)}</div></button>)}</div></>; }
+function History({ submissions, problems }: { submissions: Submission[]; problems: Problem[] }) { return <><Heading eyebrow="EXECUTION LOG" title="Submissions" text="Review every attempt, runtime, and verdict from your coding sessions." /><section className="surface-panel table-panel"><div className="table-toolbar"><strong>{submissions.length} attempts</strong><button className="secondary-btn">Export CSV</button></div>{submissions.length ? <div className="submission-table"><div className="table-row table-head"><span>Challenge</span><span>Status</span><span>Language</span><span>Passed</span><span>Runtime</span><span>Submitted</span></div>{submissions.map(item => <div className="table-row" key={item.id}><strong>{problems.find(p => p.id === item.problemId)?.title ?? item.problemId}</strong><Badge status={item.status} /><span>{item.language}</span><span>{item.passedTestCases}/{item.totalTestCases}</span><span>{item.runtimeMs === null ? '—' : `${item.runtimeMs.toFixed(2)} ms`}</span><span>{new Date(item.timestamp).toLocaleString()}</span></div>)}</div> : <p className="empty">Your run and submit history will appear here.</p>}</section></>; }
+function Profile({ solved, submissions }: { solved: Set<string>; submissions: Submission[] }) { return <><Heading eyebrow="YOUR ACCOUNT" title="Profile" text="A simple view of your practice history and arena identity." action={<button className="secondary-btn">Edit profile</button>} /><section className="profile-hero surface-panel"><div className="profile-avatar">OM</div><div><h2>Omar Developer</h2><p>Building reliable systems, one challenge at a time.</p><span>@omar · Joined September 2026</span></div><div className="profile-rank"><span>ARENA RANK</span><strong>#1,284</strong><small>Top 18%</small></div></section><div className="profile-grid"><section className="surface-panel"><div className="eyebrow">PERFORMANCE</div><h2>Practice snapshot</h2><div className="profile-stat-grid"><Metric name="Solved" value={String(solved.size)} note="challenges" tone="green" /><Metric name="Attempts" value={String(submissions.length)} note="all time" tone="blue" /><Metric name="Streak" value="04" note="days" tone="orange" /></div></section><section className="surface-panel"><div className="eyebrow">GOALS</div><h2>This month</h2><div className="goal-row"><span>Complete 10 problems</span><strong>{Math.min(solved.size, 10)} / 10</strong></div><div className="progress-track"><span style={{ width: `${Math.min(solved.size * 10, 100)}%` }} /></div><div className="goal-row"><span>Practice system design</span><strong>1 / 3</strong></div><div className="progress-track orange-track"><span style={{ width: '33%' }} /></div></section></div></>; }
+function Workspace({ problem, problems, id, code, setCode, language, setLanguage, result, busy, sandboxInput, setSandboxInput, open, run, submit, sandbox, reset }: { problem: Problem; problems: Problem[]; id: string; code: string; setCode: (value: string) => void; language: Language; setLanguage: (value: Language) => void; result: { output: string; error: string | null; runtimeMs: number | null; status: Status | null; passed: number; total: number }; busy: boolean; sandboxInput: string; setSandboxInput: (value: string) => void; open: (id: string) => void; run: () => void; submit: () => void; sandbox: () => void; reset: () => void }) {
+  return <>
+    <div className="workspace-header"><div><div className="eyebrow">CODING WORKSPACE</div><h1>{problem.title}</h1><div className="workspace-tags"><span className={`difficulty-badge ${problem.difficulty}`}>{problem.difficulty}</span>{problem.tags.map(tag => <span key={tag}>{tag}</span>)}</div></div><select className="problem-jump" value={id} onChange={event => open(event.target.value)}>{problems.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>
+    <div className="workspace-grid">
+      <section className="workspace-prompt surface-panel"><div className="workspace-tabs"><button className="active">Description</button><button>Editorial</button><button>Notes</button></div><p className="problem-description">{problem.description}</p>{problem.kind === 'system-design' && <div className="system-design-grid"><div className="system-design-panel"><div className="section-kicker">Architecture checklist</div><ul>{problem.architecture?.map(item => <li key={item}>{item}</li>)}</ul></div><div className="system-design-panel"><div className="section-kicker">Contract to implement</div><ul>{problem.apiContract?.map(item => <li key={item}>{item}</li>)}</ul></div></div>}<div className="detail-grid"><div className="panel-block"><h3>Examples</h3>{problem.examples.map((item, index) => <div className="example-box" key={index}><strong>Input:</strong> <code>{item.input}</code><br /><strong>Output:</strong> <code>{item.output}</code></div>)}</div><div className="panel-block"><h3>Constraints</h3><ul className="constraint-list">{problem.constraints.map(item => <li key={item}>{item}</li>)}</ul></div></div></section>
+      <section className="editor-panel"><div className="editor-topbar"><span><i className="editor-dot" /> Solution.{language === 'javascript' ? 'js' : 'ts'}</span><div className="editor-actions"><select value={language} onChange={event => setLanguage(event.target.value as Language)}><option value="javascript">JavaScript</option><option value="typescript">TypeScript</option></select><button onClick={reset}>Reset</button><button onClick={run} disabled={busy}>Run</button>{problem.kind === 'system-design' && <button className="sandbox-btn" onClick={sandbox} disabled={busy}>Sandbox</button>}<button className="editor-submit" onClick={submit} disabled={busy}>Submit</button></div></div><textarea className="code-input" value={code} onChange={event => setCode(event.target.value)} spellCheck={false} />{problem.kind === 'system-design' && <textarea className="sandbox-input" value={sandboxInput} onChange={event => setSandboxInput(event.target.value)} spellCheck={false} />}<div className="result-drawer"><div className="result-drawer-title"><strong>Test results</strong>{result.status && <Badge status={result.status} />}</div>{busy && <p className="loading">Running in sandbox...</p>}{result.error && <p className="error-line">{result.error}</p>}{!result.error && !result.status && <p className="empty">Run your solution to see the verdict here.</p>}{result.status && <div className="result-summary"><strong>{result.passed}/{result.total}</strong><span>test cases passed</span>{result.runtimeMs !== null && <span>� {result.runtimeMs.toFixed(2)} ms</span>}</div>}{result.output && <pre>{result.output}</pre>}</div></section>
+    </div>
+  </>;
+}
