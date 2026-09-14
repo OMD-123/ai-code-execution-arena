@@ -1,12 +1,14 @@
 # 🤖 AI Code Execution Arena
 
-A full-stack MERN/TypeScript application where users submit code, it's executed in a sandboxed environment, and results are ranked on a leaderboard.
+A full-stack MERN/TypeScript application inspired by LeetCode, where users solve coding problems, submit code in a sandboxed environment, and compete on leaderboards.
 
 ## Features
 
-- **Code Submission**: Write JavaScript/TypeScript/Python/C++/Java code and submit for execution.
-- **Sandboxed Execution**: Uses `vm2` to safely run untrusted code with timeouts.
-- **Leaderboard**: Rankings based on output length (longer output = higher score) and runtime.
+- **Problem Set**: LeetCode-style problems with descriptions, difficulties, and hidden test cases.
+- **Multiple Languages**: Submit solutions in JavaScript or TypeScript (Node.js).
+- **Sandboxed Execution**: Uses `vm2` to safely run untrusted code with timeouts and console output capture.
+- **Verdict System**: Get instant feedback: Accepted, Wrong Answer, Runtime Error.
+- **Leaderboard**: Ranked by number of passed test cases, then fastest average runtime, then earliest submission.
 - **Real-time Updates**: Leaderboard updates every 5 seconds.
 - **Responsive Design**: Works on mobile and desktop.
 
@@ -55,26 +57,34 @@ A full-stack MERN/TypeScript application where users submit code, it's executed 
 
 2. In a new terminal, start the frontend:
    ```bash
-   cd frontend
+   cd ../frontend
    npm run dev   # runs Vite dev server
    ```
    The frontend will be available at `http://localhost:5173`.
 
 ### Usage
 
-1. Select a language from the dropdown (JavaScript, Python, C++, Java).
-2. Write your code in the textarea.
-3. Click "Run & Submit".
-4. View the output (or error) and runtime.
-5. The leaderboard updates automatically showing the top 10 submissions.
+1. Select a problem from the dropdown (e.g., Two Sum, Reverse Integer).
+2. Read the problem description and difficulty.
+3. Select a language (JavaScript or TypeScript).
+4. Write your solution in the textarea.
+5. Click "Submit".
+6. View the verdict (Accepted/Wrong Answer/Runtime Error), output, runtime, and test case results.
+7. The leaderboard for the problem updates automatically showing the top 10 submissions.
+
+### Sample Problems Included
+
+- **Two Sum** (Easy): Find indices of two numbers that add up to a target.
+- **Reverse Integer** (Medium): Reverse digits of a 32-bit signed integer.
 
 ### Notes
 
 - This is a demo application. In a production setting, you would want to:
   - Use a more robust sandboxing solution (like Firecracker or gVisor).
-  - Store submissions in a database (MongoDB, PostgreSQL).
+  - Store submissions and problems in a database (MongoDB, PostgreSQL).
   - Add user authentication.
-  - Implement a more sophisticated scoring system (e.g., based on correctness for specific problems).
+  - Expand the problem set with more LeetCode-style questions.
+  - Implement a more sophisticated scoring system.
   - Add rate limiting and more security measures.
 
 ### License
